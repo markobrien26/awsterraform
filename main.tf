@@ -23,12 +23,27 @@ resource "aws_route" "internet_access" {
 }
 
 # Create a subnet to launch our instances into
-resource "aws_subnet" "default" {
+resource "aws_subnet" "public_1a" {
   vpc_id                  = "${aws_vpc.default.id}"
   cidr_block              = "10.0.1.0/24"
   map_public_ip_on_launch = true
+  availability_zone = "eu-west-1a"
+
+  tags {
+      Name = "Public 1A"
+  }
 }
 
+resource "aws_subnet" "public_1b" {
+  vpc_id                  = "${aws_vpc.default.id}"
+  cidr_block              = "10.0.2.0/24"
+  map_public_ip_on_launch = true
+  availability_zone = "eu-west-1b"
+
+  tags {
+      Name = "Public 1B"
+  }
+}
 
 
 # A security group for the ELB so it is accessible via the web
@@ -90,7 +105,7 @@ resource "aws_security_group" "default" {
 resource "aws_elb" "web" {
   name = "terraform-example-elb"
 
-  subnets         = ["${aws_subnet.default.id}"]
+  subnets         = ["${aws_subnet.public_1a.id}"]
   security_groups = ["${aws_security_group.elb.id}"]
   instances       = ["${aws_instance.web.id}"]
 
@@ -125,7 +140,7 @@ resource "aws_instance" "web" {
 
   key_name = "${aws_key_pair.auth.id}"
   vpc_security_group_ids = ["${aws_security_group.default.id}"]
-  subnet_id = "${aws_subnet.default.id}"
+  subnet_id = "${aws_subnet.public_1a.id}"
 
   # We run a remote provisioner on the instance after creating it.
   # In this case, we just install nginx and start it. By default,
@@ -156,7 +171,7 @@ resource "aws_db_instance" "default" {
 }
 
 resource "aws_db_subnet_group" "default" {
-  name        = "main_subnet_group"
+  name        = "main_db_subnet_group"
   description = "Our main group of subnets"
-  subnet_ids  = ["${aws_subnet.default.id}"]
+  subnet_ids  = ["${aws_subnet.public_1a.id}","${aws_subnet.public_1b.id}"]
 }
