@@ -102,12 +102,25 @@ resource "aws_security_group" "default" {
   }
 }
 
+resource "aws_security_group" "mysql_rds" {
+  name = "web server"
+  description = "Allow access to MySQL RDS"
+  vpc_id = "${aws_vpc.default.id}"
+
+  ingress {
+      from_port = 3306
+      to_port = 3306
+      protocol = "tcp"
+      cidr_blocks = ["10.0.0.0/16"]
+  }
+}
+
 resource "aws_elb" "web" {
   name = "terraform-example-elb"
 
-  subnets         = ["${aws_subnet.public_1a.id}"]
+  subnets         = ["${aws_subnet.public_1a.id}","${aws_subnet.public_1b.id}"]
   security_groups = ["${aws_security_group.elb.id}"]
-  instances       = ["${aws_instance.web.id}"]
+  instances       = ["${aws_instance.web01.id}","${aws_instance.web02.id}"]
 
   listener {
     instance_port     = 80
@@ -115,36 +128,40 @@ resource "aws_elb" "web" {
     lb_port           = 80
     lb_protocol       = "http"
   }
+
+  health_check {
+    healthy_threshold = 2
+    unhealthy_threshold = 2
+    timeout = 3
+    target = "HTTP:80/"
+    interval = 30
+  }
+
+  cross_zone_load_balancing = true
+  idle_timeout = 400
+  connection_draining = true
+  connection_draining_timeout = 400
 }
+
 
 resource "aws_key_pair" "auth" {
   key_name   = "${var.key_name}"
   public_key = "${file(var.public_key_path)}"
 }
 
-resource "aws_instance" "web" {
-  # The connection block tells our provisioner how to
-  # communicate with the resource (instance)
+resource "aws_instance" "web01" {
   connection {
     # The default username for our AMI
     user = "ubuntu"
-
-    # The connection will use the local SSH agent for authentication.
   }
 
   instance_type = "t1.micro"
 
-  # Lookup the correct AMI based on the region
-  # we specified
   ami = "${lookup(var.aws_amis, var.aws_region)}"
-
   key_name = "${aws_key_pair.auth.id}"
-  vpc_security_group_ids = ["${aws_security_group.default.id}"]
+  vpc_security_group_ids = ["${aws_security_group.default.id}","${aws_security_group.mysql_rds.id}"]
   subnet_id = "${aws_subnet.public_1a.id}"
 
-  # We run a remote provisioner on the instance after creating it.
-  # In this case, we just install nginx and start it. By default,
-  # this should be on port 80
   provisioner "remote-exec" {
     inline = [
       "sudo apt-get -y update",
@@ -153,6 +170,29 @@ resource "aws_instance" "web" {
     ]
   }
 }
+
+resource "aws_instance" "web02" {
+  connection {
+    # The default username for our AMI
+    user = "ubuntu"
+  }
+
+  instance_type = "t1.micro"
+
+  ami = "${lookup(var.aws_amis, var.aws_region)}"
+  key_name = "${aws_key_pair.auth.id}"
+  vpc_security_group_ids = ["${aws_security_group.default.id}","${aws_security_group.mysql_rds.id}"]
+  subnet_id = "${aws_subnet.public_1b.id}"
+
+  provisioner "remote-exec" {
+    inline = [
+      "sudo apt-get -y update",
+      "sudo apt-get -y install nginx",
+      "sudo service nginx start",
+    ]
+  }
+}
+
 
 # Create RDS Instance
 
