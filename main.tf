@@ -5,24 +5,24 @@ provider "aws" {
   region = "${var.aws_region}"
 }
 
-# Create a VPC to launch our instances into
+# Create a VPC to launch instances into
 resource "aws_vpc" "default" {
   cidr_block = "10.0.0.0/16"
 }
 
-# Create an internet gateway to give our subnet access to the outside world
+# Create an internet gateway for the subnets to access the internet
 resource "aws_internet_gateway" "default" {
   vpc_id = "${aws_vpc.default.id}"
 }
 
-# Grant the VPC internet access on its main route table
+# Give the VPC internet access 
 resource "aws_route" "internet_access" {
   route_table_id         = "${aws_vpc.default.main_route_table_id}"
   destination_cidr_block = "0.0.0.0/0"
   gateway_id             = "${aws_internet_gateway.default.id}"
 }
 
-# Create a subnet to launch our instances into
+# Create subnets for ec2 instances
 resource "aws_subnet" "public_1a" {
   vpc_id                  = "${aws_vpc.default.id}"
   cidr_block              = "10.0.1.0/24"
@@ -46,7 +46,7 @@ resource "aws_subnet" "public_1b" {
 }
 
 
-# A security group for the ELB so it is accessible via the web
+# Create Elastic LB security group
 resource "aws_security_group" "elb" {
   name        = "terraform_example_elb"
   description = "Used in the terraform"
@@ -70,8 +70,7 @@ resource "aws_security_group" "elb" {
 
 }
 
-# Our default security group to access
-# the instances over SSH and HTTP
+# Default security group for ec2 instances
 resource "aws_security_group" "default" {
   name        = "terraform_example"
   description = "Used in the terraform"
@@ -102,6 +101,7 @@ resource "aws_security_group" "default" {
   }
 }
 
+# MySql Security group for RDS
 resource "aws_security_group" "mysql_rds" {
   name = "web server"
   description = "Allow access to MySQL RDS"
@@ -115,6 +115,7 @@ resource "aws_security_group" "mysql_rds" {
   }
 }
 
+# Create Load Balancer for incoming web traffic
 resource "aws_elb" "web" {
   name = "terraform-example-elb"
 
@@ -143,12 +144,13 @@ resource "aws_elb" "web" {
   connection_draining_timeout = 400
 }
 
-
+#Specify Key pair to use 
 resource "aws_key_pair" "auth" {
   key_name   = "${var.key_name}"
   public_key = "${file(var.public_key_path)}"
 }
 
+#Create ec2 instances
 resource "aws_instance" "web01" {
   connection {
     # The default username for our AMI
@@ -159,7 +161,7 @@ resource "aws_instance" "web01" {
 
   ami = "${lookup(var.aws_amis, var.aws_region)}"
   key_name = "${aws_key_pair.auth.id}"
-  vpc_security_group_ids = ["${aws_security_group.default.id}","${aws_security_group.mysql_rds.id}"]
+  vpc_security_group_ids = ["${aws_security_group.default.id}"]
   subnet_id = "${aws_subnet.public_1a.id}"
 
   provisioner "remote-exec" {
@@ -181,7 +183,7 @@ resource "aws_instance" "web02" {
 
   ami = "${lookup(var.aws_amis, var.aws_region)}"
   key_name = "${aws_key_pair.auth.id}"
-  vpc_security_group_ids = ["${aws_security_group.default.id}","${aws_security_group.mysql_rds.id}"]
+  vpc_security_group_ids = ["${aws_security_group.default.id}"]
   subnet_id = "${aws_subnet.public_1b.id}"
 
   provisioner "remote-exec" {
@@ -197,7 +199,6 @@ resource "aws_instance" "web02" {
 # Create RDS Instance
 
 resource "aws_db_instance" "default" {
-  depends_on             = ["aws_security_group.default"]
   identifier             = "${var.identifier}"
   allocated_storage      = "${var.storage}"
   engine                 = "${var.engine}"
@@ -206,7 +207,7 @@ resource "aws_db_instance" "default" {
   name                   = "${var.db_name}"
   username               = "${var.username}"
   password               = "${var.password}"
-  vpc_security_group_ids = ["${aws_security_group.default.id}"]
+  vpc_security_group_ids = ["${aws_security_group.mysql_rds.id}"]
   db_subnet_group_name   = "${aws_db_subnet_group.default.id}"
 }
 
